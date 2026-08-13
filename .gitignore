@@ -1,0 +1,30 @@
+# ── Rust 构建产物 ────────────────────────────────
+/target
+
+# ── QimenBot 运行时产物（不提交编译后的动态库）──────
+/plugins/bin/
+*.dll
+*.so
+*.dylib
+
+# ── 密钥与插件配置（含 Secret，只留本地）────────────
+/config/plugins/
+/plugin-state.toml
+
+# ── 插件自有数据（管理员档案/数据库/日志）──────────
+/profiles/
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── 本地 Agent 工具与 Skill 安装 ──────────────────
+.dsh/
+.agents/
+
+# ── 编辑器 / 系统 ────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
