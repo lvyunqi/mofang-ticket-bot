@@ -81,7 +81,7 @@ cargo build --release
 ```toml
 [inbound]
 enabled = true
-secret = "mofang-demo-secret-0123456789"   # 与魔方侧约定的 HMAC 密钥（启用时必填）
+secret = "mofang-demo-secret-0123456789"   # 与魔方侧约定的 HMAC 密钥（启用时必填，≥16 字符）
 timestamp_tolerance_secs = 300             # 时间戳容差窗口（秒）
 nonce_cache_size = 4096                    # nonce/event.id 缓存容量
 
@@ -96,6 +96,8 @@ group_id = "123456789"      # 协议原生群号：OneBot 为数字字符串，�
 ```
 
 > `secret` 在 Web 管理面板按 `writeOnly` 密钥处理，不回传明文；但手工 TOML 里是明文，注意不要提交到 Git（`config/plugins/` 已在 `.gitignore`）。
+
+> **首次安装安全默认**：没有 `config/plugins/mofang-ticket.toml` 时，插件以**禁用态**加载（`inbound.enabled = false`），初始化不会失败。请先填写 `inbound.secret`（与魔方侧约定的 HMAC 密钥，**至少 16 字符**）和 `notify.targets`，再把 `enabled` 改为 `true` 并重载。若手工配置为 `enabled = true` 但 secret 未配置或不足 16 字符，插件仍会加载，但 Webhook 会返回 `503` 提示。
 
 ## Webhook 契约
 
@@ -137,7 +139,7 @@ group_id = "123456789"      # 协议原生群号：OneBot 为数字字符串，�
 | `200` | 已受理；重复投递时带 `"dup": true` |
 | `400` | 信封非法 / 时间戳越界 / 签名非 hex |
 | `401` | 鉴权失败（缺头 / 签名不匹配 / nonce 重放） |
-| `503` | `inbound.enabled = false` |
+| `503` | `inbound.enabled = false`，或 `enabled = true` 但 `inbound.secret` 未配置或不足 16 字符 |
 
 ## 示例
 

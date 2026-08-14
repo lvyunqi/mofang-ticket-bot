@@ -24,6 +24,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// `event.id` 幂等去重保留时长（秒）。相对 nonce 窗口更长，保证业务重试不重复处理。
 const EVENT_ID_TTL_SECS: i64 = 86_400;
 
+/// `config.schema.json` 中 `inbound.secret` 的最低长度（按 trim 后 Unicode 字符计数）。
+const MIN_SECRET_CHARS: usize = 16;
+
 // ── 统一信封模型（DESIGN.md §4.1）───────────────────────────────
 
 // Phase 1.6 群推送渲染会消费 ticket/changes/actor/content/internal_note 等字段；
@@ -83,7 +86,9 @@ struct InboundConfig {
 impl Default for InboundConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // 安全默认：首次安装/空配置以禁用态加载（ai-news 模式），
+            // 避免“缺 secret 导致 init 失败、安装事务回滚”。
+            enabled: false,
             secret: String::new(),
             timestamp_tolerance_secs: 300,
             nonce_cache_size: 4096,
@@ -171,6 +176,30 @@ fn parse_config(config_json: &str) -> Result<Config, String> {
         inbound: ib,
         notify_targets,
     })
+}
+
+/// `init` 的纯函数准备阶段：解析配置并收集警告，不触碰全局状态（可单测，避免并行竞态）。
+struct InitOutcome {
+    config: Config,
+    warnings: Vec<String>,
+}
+
+/// 解析配置并汇总加载警告。缺 secret 不是错误：`enabled = true` 但 secret 未配置或不足16字符时
+/// 插件仍可加载（Webhook 返回 503 提示），保证首次安装/空配置不阻断安装事务。
+fn prepare_init(config_json: &str) -> Result<InitOutcome, String> {
+    let config = parse_config(config_json)?;
+    let mut warnings = Vec::new();
+    if config.inbound.enabled && !secret_ready(&config.inbound.secret) {
+        warnings.push(
+            "inbound.enabled 为 true 但 inbound.secret 未配置或不足 16 字符：Webhook 将返回 503，请填写 ≥16 字符的 secret 后重载"
+                .to_string(),
+        );
+    }
+    if config.inbound.enabled && config.notify_targets.is_empty() {
+        warnings
+            .push("inbound 已启用但 notify.targets 为空，收到工单将不会推送到任何群".to_string());
+    }
+    Ok(InitOutcome { config, warnings })
 }
 
 // ── 全局状态（init 时重置，支持 reload 重复初始化）─────────────
@@ -310,6 +339,25 @@ fn push_to_targets(targets: &[NotifyTarget], text: &str) {
     }
 }
 
+// ── inbound 就绪检查（纯函数，可单测）─────────────────────────
+
+/// inbound 是否可继续处理：`None` 表示就绪；`Some(reason)` 表示不可用原因
+/// （停用 / 未配置 secret）。供 `handle_webhook` 返回 503 使用。
+/// secret 是否达到 schema 的最低强度：trim 后 Unicode 字符数 ≥ `MIN_SECRET_CHARS`。
+fn secret_ready(secret: &str) -> bool {
+    secret.trim().chars().count() >= MIN_SECRET_CHARS
+}
+
+fn inbound_unavailable_reason(inbound: &InboundConfig) -> Option<&'static str> {
+    if !inbound.enabled {
+        return Some("inbound 已停用");
+    }
+    if !secret_ready(&inbound.secret) {
+        return Some("inbound 未配置或不足 16 字符的 secret：请在配置中填写 inbound.secret 后重载");
+    }
+    None
+}
+
 // ── Webhook 处理器 ─────────────────────────────────────────────
 
 fn handle_webhook(req: &WebhookRequest) -> WebhookResponse {
@@ -323,11 +371,8 @@ fn handle_webhook(req: &WebhookRequest) -> WebhookResponse {
         }
     };
 
-    if !cfg.inbound.enabled {
-        return json_response(
-            503,
-            serde_json::json!({"ok": false, "error": "inbound 已停用"}),
-        );
+    if let Some(reason) = inbound_unavailable_reason(&cfg.inbound) {
+        return json_response(503, serde_json::json!({"ok": false, "error": reason}));
     }
 
     // 1) 解析鉴权头
@@ -446,7 +491,7 @@ fn handle_webhook(req: &WebhookRequest) -> WebhookResponse {
 
 #[dynamic_plugin(
     id = "mofang-ticket",
-    version = "0.1.5",
+    version = "0.1.6",
     api = "0.6",
     config_schema = "../config.schema.json",
     config_ui = "../config.ui.json",
@@ -458,17 +503,12 @@ mod plugin {
 
     #[init]
     fn init(config: PluginInitConfig) -> PluginInitResult {
-        let cfg = match parse_config(config.config_json.as_str()) {
-            Ok(c) => c,
+        let outcome = match prepare_init(config.config_json.as_str()) {
+            Ok(o) => o,
             Err(e) => return PluginInitResult::err(&e),
         };
-        if cfg.inbound.enabled && cfg.inbound.secret.is_empty() {
-            return PluginInitResult::err("inbound.enabled 为 true 时 inbound.secret 不能为空");
-        }
-        if cfg.inbound.enabled && cfg.notify_targets.is_empty() {
-            eprintln!(
-                "[mofang-ticket] inbound 已启用但 notify.targets 为空，收到工单将不会推送到任何群"
-            );
+        for w in &outcome.warnings {
+            eprintln!("[mofang-ticket] {w}");
         }
         // reload 语义：重置全部内存状态，保证 init 可重复调用
         NONCE_CACHE
@@ -479,7 +519,7 @@ mod plugin {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        *CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(cfg);
+        *CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome.config);
         PluginInitResult::ok()
     }
 
@@ -576,7 +616,8 @@ mod tests {
     #[test]
     fn config_defaults() {
         let cfg = parse_config("").unwrap();
-        assert!(cfg.inbound.enabled);
+        assert!(!cfg.inbound.enabled, "空配置默认禁用（安全默认）");
+        assert!(cfg.inbound.secret.is_empty());
         assert_eq!(cfg.inbound.timestamp_tolerance_secs, 300);
         assert_eq!(cfg.inbound.nonce_cache_size, 4096);
         assert!(cfg.notify_targets.is_empty());
@@ -601,5 +642,130 @@ mod tests {
         assert_eq!(cfg.notify_targets.len(), 1);
         assert_eq!(cfg.notify_targets[0].account_id, "111");
         assert_eq!(cfg.notify_targets[0].group_id, "222");
+    }
+
+    // ── 首次安装 / 空配置安全默认（回归）────────────────────────
+
+    #[test]
+    fn init_empty_config_succeeds_disabled() {
+        // 首次安装没有 config/plugins/<id>.toml → config_json 为空串
+        let outcome = prepare_init("").unwrap();
+        assert!(!outcome.config.inbound.enabled);
+        assert!(outcome.config.inbound.secret.is_empty());
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn init_enabled_without_secret_is_not_error() {
+        // enabled=true 但 secret 为空：不是初始化错误，而是加载警告
+        let outcome = prepare_init(r#"{"inbound":{"enabled":true}}"#).unwrap();
+        assert!(outcome.config.inbound.enabled);
+        assert!(outcome.config.inbound.secret.is_empty());
+        assert!(
+            outcome.warnings.iter().any(|w| w.contains("secret")),
+            "应给出缺 secret 的加载警告：{:?}",
+            outcome.warnings
+        );
+    }
+
+    #[test]
+    fn init_enabled_weak_secret_warns() {
+        // 15 字符仍低于 16 字符下限 → 加载警告（非错误）
+        let outcome =
+            prepare_init(r#"{"inbound":{"enabled":true,"secret":"short-secret-12"}}"#).unwrap();
+        assert!(outcome.config.inbound.enabled);
+        assert!(
+            outcome.warnings.iter().any(|w| w.contains("secret")),
+            "15 字符 secret 应产生加载警告：{:?}",
+            outcome.warnings
+        );
+    }
+
+    #[test]
+    fn init_enabled_min_secret_no_secret_warning() {
+        // 恰好 16 字符 → 无缺 secret 警告（可能仍有 notify.targets 为空警告）
+        let outcome =
+            prepare_init(r#"{"inbound":{"enabled":true,"secret":"1234567890abcdef"}}"#).unwrap();
+        assert!(outcome.config.inbound.enabled);
+        assert!(
+            !outcome.warnings.iter().any(|w| w.contains("secret")),
+            "16 字符 secret 不应有缺 secret 警告：{:?}",
+            outcome.warnings
+        );
+    }
+
+    #[test]
+    fn init_invalid_json_is_error() {
+        // 只有配置 JSON 本身非法才是初始化错误
+        assert!(prepare_init("{not json").is_err());
+    }
+
+    // ── inbound 就绪检查（三态）────────────────────────────────
+
+    #[test]
+    fn inbound_disabled_returns_reason() {
+        let ib = InboundConfig {
+            enabled: false,
+            secret: SECRET.into(),
+            ..Default::default()
+        };
+        assert_eq!(inbound_unavailable_reason(&ib), Some("inbound 已停用"));
+    }
+
+    #[test]
+    fn inbound_enabled_without_secret_returns_reason() {
+        let ib = InboundConfig {
+            enabled: true,
+            secret: String::new(),
+            ..Default::default()
+        };
+        assert_eq!(
+            inbound_unavailable_reason(&ib),
+            Some("inbound 未配置或不足 16 字符的 secret：请在配置中填写 inbound.secret 后重载")
+        );
+    }
+
+    #[test]
+    fn inbound_ready_returns_none() {
+        let ib = InboundConfig {
+            enabled: true,
+            secret: SECRET.into(),
+            ..Default::default()
+        };
+        assert_eq!(inbound_unavailable_reason(&ib), None);
+    }
+
+    #[test]
+    fn inbound_weak_secret_returns_reason() {
+        // 15 字符仍不足 16 字符下限
+        let ib = InboundConfig {
+            enabled: true,
+            secret: "short-secret-12".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            inbound_unavailable_reason(&ib),
+            Some("inbound 未配置或不足 16 字符的 secret：请在配置中填写 inbound.secret 后重载")
+        );
+    }
+
+    #[test]
+    fn inbound_secret_at_min_length_ready() {
+        // 恰好 16 个字符：就绪
+        let ib = InboundConfig {
+            enabled: true,
+            secret: "1234567890abcdef".into(),
+            ..Default::default()
+        };
+        assert_eq!(inbound_unavailable_reason(&ib), None);
+    }
+
+    #[test]
+    fn config_trims_secret_before_readiness() {
+        // parse_config 已 trim；首尾空白不影响就绪判断
+        let cfg = parse_config(r#"{"inbound":{"enabled":true,"secret":"  1234567890abcdef  "}}"#)
+            .unwrap();
+        assert_eq!(cfg.inbound.secret, "1234567890abcdef");
+        assert_eq!(inbound_unavailable_reason(&cfg.inbound), None);
     }
 }

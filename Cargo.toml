@@ -1,7 +1,7 @@
 [package]
 name = "qimen-dynamic-plugin-mofang-ticket"
 edition = "2024"
-version = "0.1.5"
+version = "0.1.6"
 rust-version = "1.89"
 description = "魔方财务工单对接 QimenBot 的动态插件（Webhook 接收与鉴权）"
 

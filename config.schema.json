@@ -13,12 +13,13 @@
       "properties": {
         "enabled": {
           "title": "启用入站接收",
+          "description": "默认禁用（安全默认，首次安装不阻断）；启用时须配置 secret。",
           "type": "boolean",
-          "default": true
+          "default": false
         },
         "secret": {
           "title": "入站 HMAC 密钥",
-          "description": "与魔方侧约定的签名密钥；启用时必填（建议 ≥16 字符）。",
+          "description": "与魔方侧约定的签名密钥；启用时必填（至少 16 字符）。",
           "type": "string",
           "minLength": 16,
           "writeOnly": true,
@@ -40,6 +41,13 @@
           "maximum": 1000000,
           "default": 4096
         }
+      },
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "required": ["secret"]
       }
     },
     "notify": {

@@ -479,7 +479,7 @@ Schema 要点（按 online-configuration.md 规范）：
 - `notify.targets` 用对象数组 + `itemTitle`/`itemLabel`，`events` 用枚举多选；`notify.templates` / `templates` 用 `textarea` 控件展示占位符模板。
 - `admin_profiles.fields` 用对象枚举 `scope ∈ {none, internal, customer}` 的 `select` 控件 + `editable` 开关；模板字段带 `placeholder` 提示占位符表。
 - `validate_config` 只做业务校验（不启动线程、不做长请求），并**校验模板上下文越权引用**：`customer` 模板只能引用 `scope=customer` 字段。
-- `init` 必须为「无配置文件 / 旧配置」提供默认值（含默认字段策略与模板）。
+- `init` 必须为「无配置文件 / 旧配置」提供默认值（含默认字段策略与模板）。首次安装无配置文件时以 `inbound.enabled = false` 的**禁用态**成功加载（安全默认，参考 ai-news 模式），空配置/缺 `secret`（或不足 16 字符）不阻断 init；`enabled = true` 但 `secret` 未配置或不足 16 字符时插件仍加载，Webhook 返回 503 提示，避免安装事务“初始化失败”回滚。
 
 ---
 
