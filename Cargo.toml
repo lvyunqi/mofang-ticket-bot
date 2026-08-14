@@ -1,0 +1,19 @@
+[package]
+name = "qimen-dynamic-plugin-mofang-ticket"
+edition = "2024"
+version = "0.1.0"
+rust-version = "1.89"
+description = "魔方财务工单对接 QimenBot 的动态插件（Webhook 接收与鉴权）"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+abi-stable-host-api = "0.1.13"
+abi_stable = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+qimen-dynamic-plugin-derive = "0.1.13"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"

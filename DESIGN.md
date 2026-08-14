@@ -518,6 +518,8 @@ Schema 要点（按 online-configuration.md 规范）：
 | Phase 2b | 命令 `list/detail/accept/transfer/reply/close` + 出站合并模板（客户/内部双上下文）+ outbound worker + 出站签名 + 回执 | Phase 2a + outbound.url |
 | Phase 3 | 投影/映射持久化、模板在线自定义完善、富文本/卡片增强、商城发布 | Phase 2 |
 
+> 逐条可勾选、带依赖与验收锚点的实现清单见 [TODO.md](TODO.md)，实现期间以它为准勾选推进。
+
 ---
 
 ## 15. 构建与部署

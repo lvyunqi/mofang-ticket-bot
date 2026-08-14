@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mofang-ticket 配置",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inbound": {
+      "title": "入站 Webhook",
+      "description": "魔方系统 → 插件的工单推送接收与鉴权。",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "enabled": {
+          "title": "启用入站接收",
+          "type": "boolean",
+          "default": true
+        },
+        "secret": {
+          "title": "入站 HMAC 密钥",
+          "description": "与魔方侧约定的签名密钥；启用时必填（建议 ≥16 字符）。",
+          "type": "string",
+          "minLength": 16,
+          "writeOnly": true,
+          "x-qimen-secret": true
+        },
+        "timestamp_tolerance_secs": {
+          "title": "时间戳容差",
+          "description": "允许的时间戳偏差上限，超过即拒绝。",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "default": 300
+        },
+        "nonce_cache_size": {
+          "title": "nonce 缓存容量",
+          "description": "防重放 nonce 与幂等 event.id 缓存的最大条目数。",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 4096
+        }
+      }
+    },
+    "notify": {
+      "title": "群推送",
+      "description": "收到工单后主动推送到的目标群列表。",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "targets": {
+          "title": "推送目标",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["account_id", "group_id"],
+            "properties": {
+              "account_id": {
+                "title": "稳定账号标识",
+                "description": "对应宿主 [[bots]].account_id。",
+                "type": "string",
+                "minLength": 1
+              },
+              "group_id": {
+                "title": "目标群 ID",
+                "description": "协议原生群号：OneBot 为数字字符串，官方 QQ 为 group_openid。",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

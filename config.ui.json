@@ -1,0 +1,18 @@
+{
+  "": {
+    "ui:order": ["inbound", "notify"]
+  },
+  "/inbound/secret": {
+    "ui:widget": "password"
+  },
+  "/inbound/timestamp_tolerance_secs": {
+    "unit": "秒"
+  },
+  "/inbound/nonce_cache_size": {
+    "unit": "条"
+  },
+  "/notify/targets": {
+    "itemTitle": "account_id",
+    "itemLabel": "group_id"
+  }
+}
