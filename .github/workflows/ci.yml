@@ -71,7 +71,11 @@ jobs:
             *)         BIN=libqimen_dynamic_plugin_mofang_ticket.so ;;
           esac
           cp "target/${{ matrix.target }}/release/$BIN" "./$BIN"
-          sha256sum "./$BIN" > "$BIN.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$BIN" > "$BIN.sha256"
+          else
+            shasum -a 256 "$BIN" > "$BIN.sha256"
+          fi
           ls -la
       - name: Upload artifact
         uses: actions/upload-artifact@v4
