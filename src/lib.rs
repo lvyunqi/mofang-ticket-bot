@@ -446,7 +446,7 @@ fn handle_webhook(req: &WebhookRequest) -> WebhookResponse {
 
 #[dynamic_plugin(
     id = "mofang-ticket",
-    version = "0.1.0",
+    version = "0.1.5",
     api = "0.6",
     config_schema = "../config.schema.json",
     config_ui = "../config.ui.json",

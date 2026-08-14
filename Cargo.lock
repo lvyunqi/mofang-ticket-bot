@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "qimen-dynamic-plugin-mofang-ticket"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "abi-stable-host-api",
  "abi_stable",
